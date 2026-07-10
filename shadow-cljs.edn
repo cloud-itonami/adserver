@@ -1,0 +1,8 @@
+;; adserver — first-party ad-server Worker (ADR-2607093500). Pure kotoba-lang
+;; adnet + pay.x402 + treasury vendored under src/. :esm Cloudflare Worker.
+{:deps {:aliases [:cljs]}
+ :builds
+ {:worker {:target :esm :output-dir "dist"
+           :modules {:worker {:exports {default adserver.worker/app}}}
+           :compiler-options {:infer-externs :auto}}
+  :test {:target :node-test :output-to "dist/test/test.cjs"}}}

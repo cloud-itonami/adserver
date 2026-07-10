@@ -1,0 +1,14 @@
+{
+  "name": "adserver",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-07-09",
+  "compatibility_flags": ["nodejs_compat"],
+  // "routes": [{ "pattern": "ads.x402.nexus", "custom_domain": true }],
+  "vars": {
+    // Campaign registry: JSON array of {id, advertiser, creative, bid{model,usd},
+    // targeting{tier,formats,placements,geo}, budget, status}. Public creative +
+    // bids only, no keys. cloud-itonami's governor manages the lifecycle.
+    "CAMPAIGNS_JSON": "[]"
+    // ADNET_TREASURY_ADDR (advertiser USDC deposits) via wrangler secret/var.
+  }
+}
