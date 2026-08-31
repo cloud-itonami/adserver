@@ -1,5 +1,4 @@
-;; VENDORED from kotoba-lang (treasury/core.cljc), treasury pinned at
-;; e860f9d1b4860bd2a89a96dd9928c5dc63203c0c.
+;; VENDORED from kotoba-lang (treasury/core.cljc), treasury pinned at 8265e2237fdb295c850f398112b0487428ae6cb9.
 ;; Pure, zero-dep .cljc — vendored so the adserver worker deploy is
 ;; self-contained (adserver CI checks out this repo alone, no west workspace).
 ;; Byte-identical to upstream below this header. The diff this header asks for
@@ -78,14 +77,82 @@
    "arbitrum" {:chain "arbitrum" :usdc "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
                :explorer-api "https://api.arbiscan.io/api"
                :rpc "https://arbitrum-one-rpc.publicnode.com"
-               :fee-hint "gas 安い"}})
+               :fee-hint "gas 安い"}
+   ;; The one chain here whose money is not money. It exists so a paid path
+   ;; can be exercised end to end without a transfer of funds — a rail whose
+   ;; only proof of life costs $0.05 a run gets exercised once and then
+   ;; assumed.
+   ;;
+   ;; Contract, chain id, symbol and decimals were read off the chain
+   ;; (eth_chainId 0x14a34 = 84532; symbol() "USDC"; decimals() 6) rather
+   ;; than copied from a doc page, because this address is what
+   ;; `receipt->onchain` matches Transfer logs against: a wrong one here does
+   ;; not fail, it silently admits nothing.
+   "base-sepolia"
+   {:chain "base-sepolia" :usdc "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    :explorer-api "https://api-sepolia.basescan.org/api"
+    ;; The same fallback list `base` has, for the same measured reason: a
+    ;; single public endpoint is not a reliable oracle, and when it does not
+    ;; answer, `receipt->onchain` sees no receipt and the caller reports
+    ;; `the transaction does not exist` to someone who paid. Shipping the
+    ;; testnet with one endpoint would have carried that fragility straight
+    ;; into the rail whose whole purpose is to be exercised often.
+    ;;
+    ;; Each of these was probed for eth_chainId 0x14a34 (84532) on
+    ;; 2026-08-31; a sixth candidate (base-sepolia.public.blastapi.io)
+    ;; answered -32000 and is not listed.
+    :rpc "https://sepolia.base.org"
+    :rpcs ["https://base-sepolia-rpc.publicnode.com"
+           "https://base-sepolia.drpc.org"
+           "https://84532.rpc.thirdweb.com"
+           "https://base-sepolia.gateway.tenderly.co"]
+    :testnet? true
+    :fee-hint "testnet — 価値の無い USDC。faucet で入手する"}})
 
 ;; keccak256("Transfer(address,address,uint256)")
 (def transfer-topic
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 
 (def default-chain "ethereum")
-(defn chain-cfg [chain] (get chains (or chain default-chain) (get chains default-chain)))
+
+(defn chain-cfg
+  "Config for CHAIN, or **nil when this library does not know it**.
+
+  `nil` means *unspecified* and takes the default. A NAME that is not in
+  `chains` returns nil, and that distinction is the whole point of this
+  docstring.
+
+  Until 2026-08-31 both cases fell back to Ethereum mainnet, so
+  `(chain-cfg \"base-sepolia\")` answered with Ethereum's USDC contract and
+  Ethereum's RPC. Nothing threw. What happened instead was worse than a
+  throw, in three different places:
+
+    * `receipt->onchain` matched Transfer logs against the WRONG USDC
+      contract, so a real payment contributed no entries and the payer was
+      told the transaction does not exist — `could not answer` printed as
+      `answered, and the answer is no`;
+    * `pending-entry` / `confirmed-entry` wrote `:chain \"ethereum\"` into an
+      append-only ledger for a payment that settled somewhere else;
+    * `crypto-quote` quoted a payment on a chain nobody asked for.
+
+  Callers that cannot proceed without a real config use `cfg!`, which
+  refuses by name."
+  [chain]
+  (if (nil? chain)
+    (get chains default-chain)
+    (get chains chain)))
+
+(defn known-chain? [chain] (some? (chain-cfg chain)))
+
+(defn- cfg!
+  "`chain-cfg`, or throw. For every path where an unknown chain must not
+  become a different chain's answer."
+  [chain]
+  (or (chain-cfg chain)
+      (throw (ex-info (str "unknown chain: " (pr-str chain))
+                      {:type :treasury/unknown-chain
+                       :chain chain
+                       :known (vec (sort (keys chains)))}))))
 
 (defn chain-rpcs
   "Ordered keyless JSON-RPC endpoints for `chain`. Primary `:rpc` first, then
@@ -99,9 +166,14 @@
   `the transaction does not exist`. A paid buyer being told their payment is
   not real is the same failure ADR-2608010000's materialized view exists to
   remove; this is the cheap half of that fix, and it belongs here rather than
-  in each host, because every host that verifies a Base payment needs it."
+  in each host, because every host that verifies a Base payment needs it.
+
+  An unknown chain throws rather than returning `[]`. An empty list means
+  `this chain has no endpoints configured`, and a host walking it would
+  report `no receipt` — which is `tx-not-found` to the payer, i.e. the same
+  lie `chain-cfg` used to tell one level down."
   [chain]
-  (let [{:keys [rpc rpcs]} (chain-cfg chain)]
+  (let [{:keys [rpc rpcs]} (cfg! chain)]
     (into [] (distinct (remove #(or (nil? %) (= % "")) (cons rpc (or rpcs [])))))))
 
 (def crypto-asset {:asset "USDC" :decimals 6 :custody "safe-multisig"})
@@ -173,7 +245,7 @@
   ([usd fee-frac treasury] (crypto-quote usd fee-frac treasury default-chain))
   ([usd fee-frac treasury chain]
    (let [{:keys [usd fee net]} (fee-split usd fee-frac)
-         {:keys [chain usdc fee-hint]} (chain-cfg chain)]
+         {:keys [chain usdc fee-hint]} (cfg! chain)]
      (merge crypto-asset
             {:usd usd :chain chain :usdc-contract usdc :fee-hint fee-hint
              :treasury treasury
@@ -190,7 +262,7 @@
    {:run/kind :pending
     :run/for kind
     :treasury/pending-payer (name did)
-    :treasury/payment {:asset (:asset crypto-asset) :chain (:chain (chain-cfg chain))
+    :treasury/payment {:asset (:asset crypto-asset) :chain (:chain (cfg! chain))
                         :usd usd :tx tx}
     :treasury/proof :crypto-pending}))
 
@@ -205,7 +277,7 @@
       :treasury/payer (name did)
       :treasury/net net
       :treasury/fee fee
-      :treasury/payment {:asset (:asset crypto-asset) :chain (:chain (chain-cfg chain))
+      :treasury/payment {:asset (:asset crypto-asset) :chain (:chain (cfg! chain))
                           :usd usd :tx tx}
       :treasury/proof :crypto-confirmed})))
 
@@ -309,7 +381,11 @@
   (let [g #(or (get row %) (get row (keyword %)))
         decimals (or (some-> (g "tokenDecimal") str parse-long) 6)
         raw (or (some-> (g "value") str parse-long) 0)]
-    {:to (g "to")
+    {;; the same field, from the explorer row's own `from` column, so a
+     ;; caller cannot tell which producer built the record by whether the
+     ;; payer is in it
+     :from (g "from")
+     :to (g "to")
      :amount (/ (double raw) (Math/pow 10 decimals))
      :confirmations (or (some-> (g "confirmations") str parse-long) 0)
      :asset (g "tokenSymbol")
@@ -367,7 +443,8 @@
   "Parse an eth_getTransactionReceipt result + the current head block number
    into the on-chain record verify-payment expects, for the USDC Transfer to
    the treasury. Pure — the RPC I/O is the host's. Returns nil when the tx
-   reverted or carries no matching USDC Transfer log.
+   reverted or carries no matching USDC Transfer log. The record carries
+   `:from` (Transfer topics[1], the payer) as well as `:to`.
      receipt      : {\"status\" \"0x1\" \"blockNumber\" \"0x…\"
                      \"transactionHash\" \"0x…\"
                      \"logs\" [{\"address\" \"0x…\" \"topics\" [t0 from to] \"data\" \"0x…\"}]}
@@ -403,7 +480,16 @@
       (let [la #(or (get transfer %) (get transfer (keyword %)))
             topics (la "topics")
             raw (or (hex->long (la "data")) 0)]
-        {:to (topic->address (nth topics 2))
+        {;; topics[1] is the Transfer's `from`, i.e. who paid. `logs->view`
+         ;; has always reported it and this producer did not, so the two
+         ;; halves of this library disagreed about whether the payer is part
+         ;; of an on-chain record. Three vendored copies carried the missing
+         ;; half as a LOCAL EDIT -- net-kotobase's gateway, cloud-murakumo and
+         ;; cloud-murakumo-llms-codex -- which is exactly what makes a copy
+         ;; unverifiable against any upstream commit, and a local edit here is
+         ;; invisible to the other repos running the same verify path.
+         :from (topic->address (nth topics 1))
+         :to (topic->address (nth topics 2))
          :amount (/ (double raw) (Math/pow 10 6))     ; USDC 6 decimals
          :confirmations (max 0 (inc (- current-block tx-block)))
          :asset "USDC"
@@ -449,7 +535,7 @@
    \"USDC\" contributes nothing — the same reasoning `verify-payment`'s :asset
    check exists for, applied at ingest instead of at decision time."
   [logs {:keys [chain watched from-block to-block]}]
-  (let [usdc (str/lower-case (str (:usdc (chain-cfg chain))))
+  (let [usdc (str/lower-case (str (:usdc (cfg! chain))))
         watched (into #{} (map #(str/lower-case (str %))) watched)
         entries (->> logs
                      (keep (fn [lg]
