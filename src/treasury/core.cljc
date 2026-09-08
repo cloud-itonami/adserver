@@ -36,7 +36,7 @@
   holds keys or moves funds. A payment produces a ledger entry only AFTER
   on-chain confirmation; an unverified claim stays :pending so a fake or
   underpaid tx can't confirm anything."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 ;; ── chains ───────────────────────────────────────────────────────────────
 ;; USDC contract + block-explorer API per EVM chain.
@@ -323,7 +323,7 @@
         want-usd (or (:usd pay) (get pay "usd"))
         did (pending-payer pending)
         kind (or (:run/for pending) (get pending "run/for"))
-        lc (fn [x] (some-> x str str/lower-case))
+        lc (fn [x] (some-> x str str/lower))
         to (or (:to onchain) (get onchain "to"))
         amount (or (:amount onchain) (get onchain "amount") 0)
         confs (or (:confirmations onchain) (get onchain "confirmations") 0)
@@ -406,7 +406,7 @@
    js/parseInt, which silently yields NaN on malformed/missing RPC output
    instead of nil."
   [h]
-  (let [s (some-> h str str/lower-case (str/replace #"^0x" ""))]
+  (let [s (some-> h str str/lower (str/replace #"^0x" ""))]
     (when (and s (not= s "") (re-matches #"[0-9a-f]+" s))
       #?(:clj (Long/parseLong s 16)
          :cljs (js/parseInt s 16)))))
@@ -435,7 +435,7 @@
 (defn- topic->address
   "A 32-byte log topic (0x + 24 zero-bytes + 20-byte address) → 0x<40hex> addr."
   [topic]
-  (let [s (some-> topic str str/lower-case (str/replace #"^0x" ""))]
+  (let [s (some-> topic str str/lower (str/replace #"^0x" ""))]
     (when (and s (>= (count s) 40))
       (str "0x" (subs s (- (count s) 40))))))
 
@@ -454,13 +454,13 @@
   (let [g #(or (get receipt %) (get receipt (keyword %)))
         status (g "status")
         logs (or (g "logs") [])
-        usdc (str/lower-case (str usdc-contract))
+        usdc (str/lower (str usdc-contract))
         tx-block (hex->long (g "blockNumber"))
         transfer (some (fn [lg]
                          (let [la #(or (get lg %) (get lg (keyword %)))
                                topics (or (la "topics") [])]
-                           (when (and (= (str/lower-case (str (la "address"))) usdc)
-                                      (= (str/lower-case (str (first topics))) transfer-topic)
+                           (when (and (= (str/lower (str (la "address"))) usdc)
+                                      (= (str/lower (str (first topics))) transfer-topic)
                                       (>= (count topics) 3))
                              lg)))
                        logs)]
@@ -535,18 +535,18 @@
    \"USDC\" contributes nothing — the same reasoning `verify-payment`'s :asset
    check exists for, applied at ingest instead of at decision time."
   [logs {:keys [chain watched from-block to-block]}]
-  (let [usdc (str/lower-case (str (:usdc (cfg! chain))))
-        watched (into #{} (map #(str/lower-case (str %))) watched)
+  (let [usdc (str/lower (str (:usdc (cfg! chain))))
+        watched (into #{} (map #(str/lower (str %))) watched)
         entries (->> logs
                      (keep (fn [lg]
                              (let [g #(or (get lg %) (get lg (keyword %)))
                                    topics (or (g "topics") [])
                                    to (some-> (nth topics 2 nil) topic->address)]
-                               (when (and (= (str/lower-case (str (g "address"))) usdc)
-                                          (= (str/lower-case (str (first topics))) transfer-topic)
+                               (when (and (= (str/lower (str (g "address"))) usdc)
+                                          (= (str/lower (str (first topics))) transfer-topic)
                                           (>= (count topics) 3)
                                           (contains? watched to))
-                                 {:tx (str/lower-case (str (g "transactionHash")))
+                                 {:tx (str/lower (str (g "transactionHash")))
                                   :block (hex->long (g "blockNumber"))
                                   :from (topic->address (nth topics 1))
                                   :to to
@@ -593,7 +593,7 @@
    :not-in-view as INCONCLUSIVE unless it has independent evidence of the
    block."
   [{:keys [entries]} tx]
-  (let [t (some-> tx str str/lower-case)]
+  (let [t (some-> tx str str/lower)]
     (if-let [e (first (filter #(= (:tx %) t) entries))]
       {:status :found :entry e}
       {:status :not-in-view})))
@@ -630,7 +630,7 @@
                      :asset "USDC"
                      :tx (:tx entry)}]
         (cond
-          (not= (str/lower-case (str (:to entry))) (str/lower-case (str treasury)))
+          (not= (str/lower (str (:to entry))) (str/lower (str treasury)))
           {:ok? false :reason :wrong-recipient :onchain onchain}
 
           (< (:micros entry) (* (double usd) usdc-per-usd 1e6))
