@@ -12,7 +12,7 @@
   is adnet.core/serve + adnet.billing/accrue; the worker only adds HTTP + the
   on-chain top-up verify. cloud-itonami operates campaign lifecycle (create/
   pause) through its governor; here they arrive as config the ops layer manages."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [goog.object :as gobj]
             [adnet.core :as adnet]
             [adnet.billing :as billing]
@@ -106,7 +106,7 @@
                                         head (js/parseInt (aget results 1) 16)
                                         onchain (when receipt (treasury/receipt->onchain (js->clj receipt) head usdc))]
                                     (if (and onchain
-                                             (= (str/lower-case (:to onchain)) (str/lower-case treasury-addr))
+                                             (= (str/lower (:to onchain)) (str/lower treasury-addr))
                                              (>= (:confirmations onchain) 3))
                                       (json {:ok true :credited-usdc (:amount onchain) :tx tx} 200)
                                       (json {:ok false :reason "unconfirmed or wrong recipient"} 402)))))))))
