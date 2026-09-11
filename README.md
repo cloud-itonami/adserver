@@ -39,9 +39,9 @@ GET  /health
 ## Dev
 
 ```bash
-clojure -M:test   # pure serve/auction/accrual smoke
-clojure -M:lint
-npm run build      # shadow-cljs release worker
+kbb -M:test   # pure serve/auction/accrual smoke
+kbb -M:lint
+npm run build      # amu compile --target wasm32-browser worker
 npm run deploy     # wrangler deploy
 ```
 
