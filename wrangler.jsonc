@@ -3,7 +3,8 @@
   "main": "dist/worker.js",
   "compatibility_date": "2026-07-09",
   "compatibility_flags": ["nodejs_compat"],
-  // "routes": [{ "pattern": "ads.x402.nexus", "custom_domain": true }],
+  // The zone x402.nexus is served from this account (nexus-x402 Worker).
+  "routes": [{ "pattern": "ads.x402.nexus", "custom_domain": true }],
   "vars": {
     // Campaign registry: JSON array of {id, advertiser, creative, bid{model,usd},
     // targeting{tier,formats,placements,geo}, budget, status}. Public creative +

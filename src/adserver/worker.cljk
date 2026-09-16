@@ -112,13 +112,46 @@
                                       (json {:ok false :reason "unconfirmed or wrong recipient"} 402)))))))))
           (.catch (fn [_] (json {:error "bad request"} 400)))))))
 
+;; ── GET /campaigns — the registry itself, for publishers that pull ─────
+;; The auction runs in `kotoba-lang/adnet` on both sides, so a publisher that
+;; holds the registry (murakumo.cloud syncs it into KV every few minutes) can
+;; serve from cache when this host is unreachable, and can compute the charge
+;; it records on its own receipts from the same bid this host would use.
+;; CAMPAIGNS_JSON is public by construction (creative + bid + targeting +
+;; budget, no keys), so nothing is redacted here; a malformed registry answers
+;; 503 with count nil rather than an empty list -- "unreadable" and "no
+;; campaigns" are different states and a puller must not cache the first as
+;; the second.
+
+(defn- handle-campaigns [env]
+  (let [raw (gobj/get env "CAMPAIGNS_JSON")
+        parsed (try (when (and (string? raw) (not= raw "")) (js/JSON.parse raw))
+                    (catch :default _ ::bad))]
+    (cond
+      (= ::bad parsed)
+      (json {:service "adserver" :ok false :count nil
+             :error "CAMPAIGNS_JSON is not valid JSON"} 503)
+      (and (some? parsed) (not (array? parsed)))
+      (json {:service "adserver" :ok false :count nil
+             :error "CAMPAIGNS_JSON is not an array"} 503)
+      :else
+      (let [arr (or parsed #js [])]
+        (js/Response. (js/JSON.stringify #js {:service "adserver" :ok true
+                                             :count (alength arr)
+                                             :generated-at (now-iso)
+                                             :campaigns arr})
+                      #js {:status 200
+                           :headers #js {"content-type" "application/json; charset=utf-8"
+                                         "cache-control" "no-store"}})))))
+
 ;; ── catalog / discovery ─────────────────────────────────────────────
 
 (defn- handle-catalog [env]
   (json {:service "adserver"
          :campaigns (count (campaigns env))
          :slots (->> (campaigns env) (mapcat #(get-in % [:targeting :placements])) (remove nil?) distinct vec)
-         :billing "USDC on Base via x402 prepaid deposits"} 200))
+         :billing "USDC on Base via x402 prepaid deposits"
+         :registry "/campaigns"} 200))
 
 (defn- fetch-handler [^js request env _ctx]
   (let [p (.-pathname (js/URL. (.-url request)))
@@ -133,6 +166,7 @@
       (and (= m "POST") (= p "/event"))   (handle-event request env)
       (and (= m "POST") (= p "/topup"))   (handle-topup request env)
       (= p "/catalog")                    (js/Promise.resolve (handle-catalog env))
+      (and (= m "GET")  (= p "/campaigns")) (js/Promise.resolve (handle-campaigns env))
       (= p "/health")                     (js/Promise.resolve (json {:ok true :service "adserver"} 200))
       :else (js/Promise.resolve (json {:service "adserver" :see "/catalog"} 200)))))
 

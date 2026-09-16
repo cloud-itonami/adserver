@@ -1,0 +1,50 @@
+(ns worker-http-test
+  "The compiled Worker's HTTP surface, both directions.
+
+    kbb --backend sci test/worker_http_test.cljk   (after npm run build)"
+  (:require ["node:assert/strict" :as a] ["node:url" :as url] ["node:path" :as path]))
+
+(def cpm "[{\"id\":\"cmp-1\",\"advertiser\":\"did:key:zADV\",\"creative\":{\"type\":\"text\",\"click-url\":\"https://example.test/ad\",\"copy\":\"Ad copy\"},\"bid\":{\"model\":\"cpm\",\"usd\":\"4.00\"},\"targeting\":{\"placements\":[\"go-wait\"]},\"budget\":{\"total-usd\":\"50.00\",\"spent-micros\":0},\"status\":\"active\"}]")
+
+(defn call [w env method path]
+  (.fetch w (js/Request. (str "https://ads.x402.nexus" path) #js {:method method}) env #js {}))
+(defn json! [p expected]
+  (.then p (fn [r] (a/equal (.-status r) expected (str "status " (.-url r))) (.json r))))
+
+(-> (js/eval (str "import(" (js/JSON.stringify (str (url/pathToFileURL (path/resolve "dist/worker.js")))) ")"))
+    (.then (fn [m]
+             (let [w (.-default m)
+                   empty-env #js {:CAMPAIGNS_JSON "[]"}
+                   one-env #js {:CAMPAIGNS_JSON cpm}
+                   bad-env #js {:CAMPAIGNS_JSON "{not json"}
+                   obj-env #js {:CAMPAIGNS_JSON "{\"id\":1}"}]
+               (-> (json! (call w empty-env "GET" "/campaigns") 200)
+                   (.then (fn [r]
+                            (a/equal (.-ok r) true) (a/equal (.-count r) 0)
+                            (a/equal (alength (.-campaigns r)) 0)
+                            (json! (call w one-env "GET" "/campaigns") 200)))
+                   (.then (fn [r]
+                            (a/equal (.-count r) 1)
+                            (a/equal (.-id (aget (.-campaigns r) 0)) "cmp-1")
+                            (a/equal (.-usd (.-bid (aget (.-campaigns r) 0))) "4.00" "the bid is public and verbatim")
+                            (json! (call w bad-env "GET" "/campaigns") 503)))
+                   (.then (fn [r]
+                            (a/equal (.-ok r) false)
+                            (a/equal (.-count r) nil "unreadable is not empty")
+                            (json! (call w obj-env "GET" "/campaigns") 503)))
+                   (.then (fn [r]
+                            (a/equal (.-count r) nil)
+                            (json! (call w one-env "GET" "/serve?slot=go-wait") 200)))
+                   (.then (fn [r]
+                            (a/equal (.-kind r) "paid") (a/equal (aget r "campaign-id") "cmp-1")
+                            (json! (call w empty-env "GET" "/serve?slot=go-wait") 200)))
+                   (.then (fn [r]
+                            (a/equal (.-kind r) "house" "no campaigns -> the house ad, never an error")
+                            (json! (call w one-env "GET" "/catalog") 200)))
+                   (.then (fn [r]
+                            (a/equal (.-campaigns r) 1) (a/equal (.-registry r) "/campaigns")
+                            (json! (call w one-env "GET" "/health") 200)))
+                   (.then (fn [r]
+                            (a/equal (.-ok r) true)
+                            (println "CHECKED\t8\tadserver http: /campaigns empty, one, unreadable 503, non-array 503; /serve paid + house; /catalog; /health")))))))
+    (.catch (fn [e] (.error js/console e) (js/process.exit 1))))
