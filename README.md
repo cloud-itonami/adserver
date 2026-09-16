@@ -20,6 +20,7 @@ its ops-LLM ⊣ CertGovernor loop); campaigns arrive here as `CAMPAIGNS_JSON`.
 GET  /serve?slot=&tier=&format=&geo=   → {kind:paid|house, creative, campaign-id}
 POST /event {campaign-id, kind, placement}  → {charge-micros, event}
 POST /topup {tx}                        → verify an advertiser's USDC deposit on-chain
+GET  /campaigns                         → the registry itself (public creative + bid + targeting + budget); 503 + count null when CAMPAIGNS_JSON is unreadable
 GET  /catalog                           → campaign count + slots + billing
 GET  /health
 ```
@@ -39,10 +40,22 @@ GET  /health
 ## Dev
 
 ```bash
-kbb -M:test   # pure serve/auction/accrual smoke
+npm test           # portable suite on kbb, then the compiled Worker: node test runner + HTTP surface (worker_http_test.cljk)
 kbb -M:lint
-npm run build      # amu compile --target wasm32-browser worker
-npm run deploy     # wrangler deploy
+npm run build      # scripts/cljk-mirror.cljk -> .cljk-build/, then shadow-cljs release worker -> dist/worker.js
+npm run deploy     # wrangler deploy -> https://ads.x402.nexus
 ```
+
+Sources are `.cljk` (ADR-2609111500); shadow-cljs reads the git-ignored mirror
+`scripts/cljk-mirror.cljk` derives from `cljk-origin.edn`.
+
+## Live (2026-09-16)
+
+`https://ads.x402.nexus` (network-awai Cloudflare account, zone `x402.nexus`).
+`CAMPAIGNS_JSON` is `[]`: **the registry is empty by fact, not by omission** —
+no advertiser has funded a campaign. `/serve` therefore answers the house ad,
+and `/campaigns` answers `count 0`. The first publisher wired to this host is
+murakumo.cloud (`cloud-murakumo.adnetwork`: pulls `/campaigns` into its KV on
+a cron, serves from that cache, reports `/api/v1/ads/inventory`).
 
 Apache-2.0.

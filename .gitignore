@@ -3,3 +3,5 @@
 /.shadow-cljs
 .wrangler
 .cpcache/
+# scripts/cljk-mirror.cljk writes it; shadow-cljs cannot resolve .cljk
+.cljk-build/

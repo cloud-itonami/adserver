@@ -1,0 +1,13 @@
+{:format :kotoba.cljk-origin/v1
+ :renamed-on "2026-09-16"
+ :decision "adr-2609111500-cljk-rename-all-clojure-source: Clojure-shaped source is .cljk; .kotoba is Kotoba source. These six were renamed .clj*/.cljs -> .kotoba on 2026-09-10 (f41a89f, mechanical) and are moved to .cljk here. Origins are the pre-2026-09-10 extensions, read from that commit's rename records."
+ :rule "value = the extension the file had before the rename."
+ :origins
+ {"src/adnet/billing.cljk" ".cljc"
+  "src/adnet/core.cljk" ".cljc"
+  "src/adserver/worker.cljk" ".cljs"
+  "src/treasury/core.cljk" ".cljc"
+  "test/adserver/smoke_test.cljk" ".cljc"
+  "test/run_portable.cljk" ".cljs"
+  "scripts/cljk-mirror.cljk" ".cljs"
+  "test/worker_http_test.cljk" ".cljs"}}

@@ -1,0 +1,45 @@
+;; cljk-mirror — derive the platform-extension tree shadow-cljs can load from
+;; this repo's canonical .cljk sources.
+;;
+;;   kbb --backend sci scripts/cljk-mirror.cljk   -> writes .cljk-build/{src,test}
+;;
+;; Why (2026-09-16): shadow-cljs resolves namespaces only from .cljs/.cljc/.clj;
+;; the sources here are .cljk (ADR-2609111500), so `compile worker` cannot see
+;; them. Same generated, git-ignored derivation fans-oppai and cloud-murakumo
+;; use, whose extensions come from cljk-origin.edn. It refuses (exit 2) on a
+;; .cljk file with no origin entry rather than guessing a platform.
+;;
+;; Removal condition: the day `kbb -M:cljs` resolves a .cljk namespace, delete
+;; this file, `.cljk-build` from .gitignore and the :mirror alias in deps.edn.
+(ns cljk-mirror
+  (:require ["node:fs" :as fs]
+            ["node:path" :as path]
+            [cljs.reader :as reader]))
+
+(def out-root ".cljk-build")
+(def roots ["src" "test"])
+
+(defn walk [dir]
+  (if (fs/existsSync dir)
+    (mapcat (fn [name]
+              (let [p (path/join dir name)]
+                (if (.isDirectory (fs/statSync p)) (walk p) [p])))
+            (fs/readdirSync dir))
+    []))
+
+(defn -main []
+  (let [origins (:origins (reader/read-string (fs/readFileSync "cljk-origin.edn" "utf8")))
+        files (filter #(.endsWith % ".cljk") (mapcat walk roots))
+        unknown (remove #(contains? origins %) files)]
+    (when (seq unknown)
+      (println "REFUSED: .cljk files with no entry in cljk-origin.edn (record the original extension):")
+      (doseq [f unknown] (println "  " f))
+      (js/process.exit 2))
+    (when (fs/existsSync out-root) (fs/rmSync out-root #js {:recursive true :force true}))
+    (doseq [f files]
+      (let [target (path/join out-root (str (subs f 0 (- (count f) 5)) (get origins f)))]
+        (fs/mkdirSync (path/dirname target) #js {:recursive true})
+        (fs/copyFileSync f target)))
+    (println (str "cljk-mirror: " (count files) " file(s) -> " out-root "/"))))
+
+(-main)

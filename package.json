@@ -1,5 +1,7 @@
 { "name": "adserver", "private": true, "type": "module",
   "description": "First-party ad-server Worker (kotoba-lang/adnet core) — advertisers bill in USDC via x402.",
-  "scripts": { "build": "amu compile --target wasm32-browser worker", "test": "amu compile --target wasm32-browser test && node dist/test/test.cjs",
+  "scripts": { "cljk": "kbb --backend sci scripts/cljk-mirror.cljk",
+               "build": "npm run cljk && kbb -M:cljs:mirror -m shadow.cljs.devtools.cli release worker",
+               "test": "kbb --backend sci --classpath src:test test/run_portable.cljk && npm run cljk && kbb -M:cljs:mirror -m shadow.cljs.devtools.cli compile test && node dist/test/test.cjs && kbb --backend sci test/worker_http_test.cljk",
                "deploy": "npm run build && wrangler deploy" },
   "devDependencies": { "shadow-cljs": "2.28.20", "wrangler": "^4" } }
