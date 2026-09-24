@@ -3,7 +3,7 @@
   worker composes (serve decision, auction, accrual) without a Worker runtime.
   The impure seams (HTTP, RPC top-up verify) are covered by adnet/treasury's
   own tests."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [adnet.core :as adnet]
             [adnet.billing :as billing]))
 
