@@ -1,0 +1,2 @@
+description: adnetwork 広告主情報を収集して Cloudflare R2 data catalog (Iceberg) に保存する bot
+description_auto: false
