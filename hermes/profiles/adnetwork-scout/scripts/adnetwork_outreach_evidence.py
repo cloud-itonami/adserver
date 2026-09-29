@@ -17,7 +17,7 @@ WS = os.path.expanduser("~/.hermes/profiles/adnetwork-scout/workspace")
 
 INNER = """
 import sys, json, datetime
-sys.path.insert(0, '__REPO__/scripts')
+sys.path.insert(0, '__REPO__/root/scripts')
 from datalake_catalog import connect
 t = connect().load_table(('cloud_itonami', 'adnetwork_advertiser'))
 a = t.scan().to_arrow().to_pylist()

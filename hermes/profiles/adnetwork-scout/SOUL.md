@@ -8,7 +8,7 @@ Discover and record publicly observable advertiser information from ad networks 
 
 ## Procedure
 
-1. cd ~/github/com-junkawasaki
+1. cd ~/github/com-junkawasaki/root
 2. Run the evidence probe first:
    /opt/homebrew/bin/python3 ~/.hermes/profiles/adnetwork-scout/scripts/adnetwork_evidence.py
    It must print CATALOG, NAMESPACE and TABLE lines. If it prints REFUSED, stop.
