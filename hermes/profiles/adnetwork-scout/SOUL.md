@@ -9,9 +9,7 @@ Discover and record publicly observable advertiser information from ad networks 
 ## Procedure
 
 1. cd ~/github/com-junkawasaki/root
-2. Run the evidence probe first:
-   /opt/homebrew/bin/python3 ~/.hermes/profiles/adnetwork-scout/scripts/adnetwork_evidence.py
-   It must print CATALOG, NAMESPACE and TABLE lines. If it prints REFUSED, stop.
+2. Use the Kotoba scheduler pre-run evidence output above. It must contain CATALOG, NAMESPACE present, TABLE, and SCHEMA lines. If it contains REFUSED or reports the namespace/table absent, stop without writing.
 3. Collect observations. Rules:
    - Primary sources only (the network's own pages, or ad tags/creatives you observed directly). Search snippets and third-party wikis are inadmissible.
    - Never fetch with bot-detection evasion. A blocked fetch is "not observed", not "observed via workaround".
