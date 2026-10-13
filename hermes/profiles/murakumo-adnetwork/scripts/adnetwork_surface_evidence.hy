@@ -36,7 +36,7 @@
     (measure "placement_http" status)
     (measure "placement_kind" (data.get "kind" "?"))
     (measure "placement_id" (data.get "placement" "?"))
-    (except [Exception as error] (measure "placement_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "placement_http" (+ "ERROR:" (type error).__name__))))
   (try
     (setv [status data] (fetch "/mcp" "POST"
       (.encode (json.dumps {"jsonrpc" "2.0" "id" 1 "method" "tools/list"}))
@@ -45,31 +45,31 @@
     (measure "mcp_http" status)
     (measure "mcp_tools" (.join "," tools))
     (measure "mcp_tool_count" (len tools))
-    (except [Exception as error] (measure "mcp_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "mcp_http" (+ "ERROR:" (type error).__name__))))
   (try
     (setv [status body] (fetch "/advertise"))
     (measure "advertise_http" status)
     (measure "advertise_page_present" (if (in b"Murakumo Ads" body) "yes" "no"))
-    (except [Exception as error] (measure "advertise_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "advertise_http" (+ "ERROR:" (type error).__name__))))
   (try
     (setv [status data] (observe-json "/api/v1/free/status"))
     (measure "free_status_http" status)
     (for [key ["advertiserFunded" "fundingSource" "impressionsPerUnit" "available" "dailyUnitCap"]]
       (measure (.replace key "advertiserFunded" "free_advertiser_funded") (data.get key "?")))
-    (except [Exception as error] (measure "free_status_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "free_status_http" (+ "ERROR:" (type error).__name__))))
   (try
     (setv [status data] (observe-json "/.well-known/x402"))
     (measure "x402_http" status)
     (measure "x402_resource_count" (len (data.get "resources" [])))
     (measure "x402_versions" (.join "," (lfor version (data.get "versions" []) (str version))))
-    (except [Exception as error] (measure "x402_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "x402_http" (+ "ERROR:" (type error).__name__))))
   (try
     (setv request (urllib.request.Request (+ site "/sdk/x402-agent.mjs") :method "HEAD"))
     (.add_header request "user-agent" user-agent)
     (with [response (urllib.request.urlopen request :timeout 20)]
       (measure "sdk_http" response.status)
       (measure "sdk_len" (.get response.headers "content-length" "?")))
-    (except [Exception as error] (measure "sdk_http" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "sdk_http" (+ "ERROR:" (type error).__name__))))
   (measure "adnet_core_present" (if (os.path.isfile (os.path.join adnet "src" "adnet" "core.cljk")) "yes" "no"))
   (for [filename ["ads.cljk" "ads_http.cljk" "ads_review.cljk" "ads_mcp.cljk" "free_tier.cljk" "free_tier_http.cljk"]]
     (measure (+ "repo_" filename)
@@ -77,14 +77,14 @@
   (try
     (setv [_ data] (observe-json "/api/v1/ads/placement?id=go-sidebar"))
     (measure "campaigns_observable" (if (= (data.get "kind") "paid") "paid" "house-only"))
-    (except [Exception as error] (measure "campaigns_observable" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "campaigns_observable" (+ "ERROR:" (type error).__name__))))
   (try
     (sys.path.insert 0 (os.path.join repo "root" "scripts"))
     (setv connect (getattr (importlib.import_module "datalake_catalog") "connect"))
     (setv table (.load_table (connect) (, "cloud_itonami" "adnetwork_advertiser")))
     (setv arrow (.to_arrow (.scan table)))
     (measure "advertiser_leads_rows" arrow.num_rows)
-    (except [Exception as error] (measure "advertiser_leads_rows" (+ "ERROR:" (type error).__name__))))
+    (except [error Exception] (measure "advertiser_leads_rows" (+ "ERROR:" (type error).__name__))))
   0)
 
 (when (= __name__ "__main__") (sys.exit (main)))
