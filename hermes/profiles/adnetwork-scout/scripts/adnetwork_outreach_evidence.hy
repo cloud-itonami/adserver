@@ -1,12 +1,62 @@
-"Outreach evidence for adnetwork-scout: read the collected advertiser leads\nfrom the R2 Data Catalog (readback only; this bot owns the table) and pick a\nsmall candidate set for /advertise outreach proposals. Decision-free: it ranks\nby observed recency + completeness and prints MEASURE lines. No send, no write\noutside the profile workspace.\n"
-(import __future__ [annotations])
+"""Read advertiser leads, rank unique candidates, and write a bounded JSONL snapshot."""
+
 (import datetime :as dt)
+(import importlib)
 (import json)
 (import os)
-(import subprocess)
 (import sys)
-(setv REPO ((. os.environ get) "ADNETWORK_REPO" "~/github/com-junkawasaki"))
-(setv WS ((. os.path expanduser) "~/.hermes/profiles/adnetwork-scout/workspace"))
-(setv INNER ((. "\nimport sys, json, datetime\nsys.path.insert(0, '__REPO__/root/scripts')\nfrom datalake_catalog import connect\nt = connect().load_table(('cloud_itonami', 'adnetwork_advertiser'))\na = t.scan().to_arrow().to_pylist()\nnow = datetime.datetime.now(datetime.timezone.utc)\ndef score(r):\n    s = 0\n    if r.get('advertiser_name'): s += 1\n    if r.get('notes'): s += 1\n    try:\n        obs = datetime.datetime.fromisoformat(r.get('observed_at') or '')\n        age_days = (now - obs).days\n    except Exception:\n        age_days = 9999\n    s -= age_days * 0.01\n    return s\nseen = {}\nfor r in a:\n    k = (r.get('network'), r.get('advertiser_key'))\n    if k not in seen or score(r) > score(seen[k]):\n        seen[k] = r\ncands = sorted(seen.values(), key=score, reverse=True)\nprint('LEADS\tunique=%d' % len(seen))\nfor r in cands[:10]:\n    print('CANDIDATE\t' + json.dumps({\n        'network': r.get('network'), 'advertiser_key': r.get('advertiser_key'),\n        'advertiser_name': r.get('advertiser_name'), 'evidence_url': r.get('evidence_url'),\n        'observed_at': r.get('observed_at'), 'notes': (r.get('notes') or '')[:160]},\n        ensure_ascii=False))\n" replace) "__REPO__" REPO))
-(defn (annotate main int) [] (print "ADNETWORK_OUTREACH_EVIDENCE_V1") (print (+ "measured_at=" ((. ((. dt.datetime now) (. dt.timezone utc)) isoformat)))) (setv py "/opt/homebrew/bin/python3") (when (not ((. os.path exists) py)) (print "REFUSED - no /opt/homebrew/bin/python3") (return 2)) (setv proc (subprocess.run [py "-c" INNER] :capture_output True :text True :timeout 300)) (setv out ((. (+ proc.stdout proc.stderr) strip))) (when (or (!= proc.returncode 0) (not-in "LEADS" out)) (print (% "REFUSED - catalog readback failed (exit %s):" proc.returncode)) (print (cut out -500 None)) (return 2)) (print out) (os.makedirs WS :exist_ok True) (with [f (open ((. os.path join) WS "outreach-candidates.jsonl") "w")] (for [line (out.splitlines)] (when (line.startswith "CANDIDATE") (f.write (+ (get (line.split "\t" 1) 1) "\n"))))) (return 0))
+
+(setv repo (os.path.expanduser (os.environ.get "ADNETWORK_REPO" "~/github/com-junkawasaki")))
+(setv workspace (os.path.expanduser "~/.hermes/profiles/adnetwork-scout/workspace"))
+(sys.path.insert 0 (os.path.join repo "root" "scripts"))
+
+(defn score [row now]
+  (setv completeness (+ (if (row.get "advertiser_name") 1 0)
+                         (if (row.get "notes") 1 0)))
+  (try
+    (setv observed (dt.datetime.fromisoformat (row.get "observed_at" "")))
+    (setv age-days (max 0 (// (- now observed).total_seconds 86400)))
+    (except [Exception] (setv age-days 9999))
+  (- completeness (* age-days 0.01)))
+
+(defn main []
+  (print "ADNETWORK_OUTREACH_EVIDENCE_V1")
+  (print (+ "measured_at=" (dt.datetime.now dt.timezone.utc).isoformat))
+  (try
+    (setv connect (getattr (importlib.import_module "datalake_catalog") "connect"))
+    (setv table (.load_table (connect) (, "cloud_itonami" "adnetwork_advertiser")))
+    (setv rows (-> table (.scan) (.to_arrow) (.to_pylist)))
+    (setv now (dt.datetime.now dt.timezone.utc))
+    (setv newest {})
+    (for [row rows]
+      (setv key (, (row.get "network") (row.get "advertiser_key")))
+      (when (or (not (in key newest))
+                (> (score row now) (score (get newest key) now)))
+        (setv (get newest key) row)))
+    (setv candidates (sorted (.values newest) :key (fn [row] (score row now)) :reverse True))
+    (print f"LEADS\tunique={(len newest)}")
+    (for [row (cut candidates 0 10)]
+      (print (+ "CANDIDATE\t"
+                (json.dumps {"network" (row.get "network")
+                            "advertiser_key" (row.get "advertiser_key")
+                            "advertiser_name" (row.get "advertiser_name")
+                            "evidence_url" (row.get "evidence_url")
+                            "observed_at" (row.get "observed_at")
+                            "notes" (cut (row.get "notes" "") 0 160)}
+                           :ensure_ascii False))))
+    (os.makedirs workspace :exist_ok True)
+    (with [out (open (os.path.join workspace "outreach-candidates.jsonl") "w")]
+      (for [row (cut candidates 0 10)]
+        (.write out (+ (json.dumps {"network" (row.get "network")
+                                    "advertiser_key" (row.get "advertiser_key")
+                                    "advertiser_name" (row.get "advertiser_name")
+                                    "evidence_url" (row.get "evidence_url")
+                                    "observed_at" (row.get "observed_at")
+                                    "notes" (cut (row.get "notes" "") 0 160)}
+                                   :ensure_ascii False) "\n"))))
+    0
+    (except [Exception as error]
+      (print (+ "REFUSED - catalog readback failed: " (type error).__name__))
+      2)))
+
 (when (= __name__ "__main__") (sys.exit (main)))

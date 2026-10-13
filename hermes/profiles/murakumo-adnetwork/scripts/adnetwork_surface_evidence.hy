@@ -1,15 +1,90 @@
-"Decision-free measurements for the murakumo-adnetwork bot.\n\nMeasures the LIVE murakumo.cloud ad network surface and the local checkout.\nWrites nothing. Output is MEASURE<TAB>key<TAB>value lines so the cron agent\nreads facts instead of re-deriving them. On any environment failure it prints\nREFUSED and the reason, so the agent reports blindness instead of guessing.\n\nLive surfaces (2026-09-17 first measured):\n  GET  /api/v1/ads/placement         placement decision (auction output)\n  POST /api/v1/ads/apply             advertiser intake\n  POST /mcp                          MCP advertiser intake (tools/list)\n  GET  /advertise                    advertiser-facing page\n  GET  /api/v1/free/status           ad-funded free lane funding state\n  GET  /.well-known/x402             priced endpoint discovery\n  HEAD /sdk/x402-agent.mjs           browser-neutral SDK\nRepo surfaces:\n  orgs/kotoba-lang/adnet             pure auction/billing/entitlement core\n  orgs/network-awai/cloud-murakumo   publisher wiring (ads*.cljk, free_tier*)\n"
-(import __future__ [annotations])
+"""Read-only measurements for the murakumo.cloud ad network surfaces."""
+
 (import datetime :as dt)
+(import importlib)
 (import json)
-(import subprocess)
+(import os)
 (import sys)
 (import urllib.request)
-(setv SITE "https://murakumo.cloud")
-(setv REPO "~/github/com-junkawasaki")
-(setv ADS (+ REPO "/orgs/network-awai/cloud-murakumo"))
-(setv ADNET (+ REPO "/orgs/kotoba-lang/adnet"))
-(setv UA "murakumo-adnetwork-bot/1 (evidence collector; contact: owner)")
-(defn fetch [(annotate path str) (annotate [method "GET"] str) (annotate [body None] (| bytes None)) (annotate [headers None] (| dict None)) (annotate [timeout 20] int)] (setv req ((. urllib.request Request) (+ SITE path) :method method :data body)) (req.add_header "user-agent" UA) (for [#(k v) ((. (or headers {}) items))] (req.add_header k v)) (with [resp ((. urllib.request urlopen) req :timeout timeout)] (return #(resp.status (resp.read)))))
-(defn (annotate main int) [] (print "ADNETWORK_SURFACE_EVIDENCE_V1") (print (+ "measured_at=" ((. ((. dt.datetime now) (. dt.timezone utc)) isoformat)))) (defn (annotate m None) [(annotate key str) (annotate value str)] (print f"MEASURE\t{key}\t{value}")) (try (setv #(st b) (fetch "/api/v1/ads/placement?id=free-tier")) (setv d (json.loads b)) (m "placement_http" (str st)) (m "placement_kind" (d.get "kind" "?")) (m "placement_id" (d.get "placement" "?")) (except [e Exception] (m "placement_http" (+ "ERROR:" (. (type e) __name__))))) (try (setv #(st b) (fetch "/mcp" "POST" ((. (json.dumps {"jsonrpc" "2.0"  "id" 1  "method" "tools/list"}) encode)) {"content-type" "application/json"  "Accept" "application/json, text/event-stream"})) (setv tools (lfor t (get (get (json.loads b) "result") "tools") (t.get "name"))) (m "mcp_http" (str st)) (m "mcp_tools" ((. "," join) tools)) (m "mcp_tool_count" (str (len tools))) (except [e Exception] (m "mcp_http" (+ "ERROR:" (. (type e) __name__))))) (try (setv #(st b) (fetch "/advertise")) (setv ok (in b"Murakumo Ads" b)) (m "advertise_http" (str st)) (m "advertise_page_present" (if ok "yes" "no")) (except [e Exception] (m "advertise_http" (+ "ERROR:" (. (type e) __name__))))) (try (setv #(st b) (fetch "/api/v1/free/status")) (setv d (json.loads b)) (m "free_status_http" (str st)) (m "free_advertiser_funded" (str (d.get "advertiserFunded"))) (m "free_funding_source" (d.get "fundingSource" "?")) (m "free_impressions_per_unit" (str (d.get "impressionsPerUnit"))) (m "free_available" (str (d.get "available"))) (m "free_daily_unit_cap" (str (d.get "dailyUnitCap"))) (except [e Exception] (m "free_status_http" (+ "ERROR:" (. (type e) __name__))))) (try (setv #(st b) (fetch "/.well-known/x402")) (setv d (json.loads b)) (setv res (d.get "resources" [])) (m "x402_http" (str st)) (m "x402_resource_count" (str (len res))) (m "x402_versions" ((. "," join) (gfor v (d.get "versions" []) (str v)))) (except [e Exception] (m "x402_http" (+ "ERROR:" (. (type e) __name__))))) (try (setv req ((. urllib.request Request) (+ SITE "/sdk/x402-agent.mjs") :method "HEAD")) (req.add_header "user-agent" UA) (with [resp ((. urllib.request urlopen) req :timeout 20)] (m "sdk_http" (str resp.status)) (m "sdk_len" ((. resp.headers get) "content-length" "?"))) (except [e Exception] (m "sdk_http" (+ "ERROR:" (. (type e) __name__))))) (import os) (setv adnet_core (+ ADNET "/src/adnet/core.cljk")) (m "adnet_core_present" (if ((. os.path isfile) adnet_core) "yes" "no")) (for [f ["ads.cljk" "ads_http.cljk" "ads_review.cljk" "ads_mcp.cljk" "free_tier.cljk" "free_tier_http.cljk"]] (m (+ "repo_" f) (if ((. os.path isfile) (+ (+ ADS "/src/cloud_murakumo/") f)) "yes" "no"))) (setv campaigns_set "unmeasured-observable-only") (try (setv #(st b) (fetch "/api/v1/ads/placement?id=go-sidebar")) (setv d (json.loads b)) (setv campaigns_set (if (= (d.get "kind") "paid") "paid" "house-only")) (except [e Exception] (setv campaigns_set (+ "ERROR:" (. (type e) __name__))))) (m "campaigns_observable" campaigns_set) (try (setv py "/opt/homebrew/bin/python3") (setv code ((. "\nimport sys, collections\nsys.path.insert(0, '__REPO__/scripts')\nfrom datalake_catalog import connect\nt = connect().load_table(('cloud_itonami', 'adnetwork_advertiser'))\na = t.scan().to_arrow()\nprint('LEADS\trows=%d' % a.num_rows)\nnets = collections.Counter(r['network'] for r in a.select(['network']).to_pylist())\nprint('LEADS\tnetworks=%s' % sorted(nets.items())[:40])\n" replace) "__REPO__" REPO)) (setv proc (subprocess.run [py "-c" code] :capture_output True :text True :timeout 300)) (setv out ((. (+ proc.stdout proc.stderr) strip))) (if (and (= proc.returncode 0) (in "LEADS" out)) (do (for [line (out.splitlines)] (when (line.startswith "LEADS") (print (line.replace "\t" " "))))) (do (m "advertiser_leads" (+ "ERROR:" (or (cut out -120 None) ((. proc.returncode __str__))))))) (except [e Exception] (m "advertiser_leads" (+ "ERROR:" (. (type e) __name__))))) (return 0))
-(when (= __name__ "__main__") (try (sys.exit (main)) (except [e Exception] (print "REFUSED - no evidence was gathered this run.") (print (+ (+ (. (type e) __name__) ": ") (str e))) (sys.exit 2))))
+
+(setv site "https://murakumo.cloud")
+(setv repo (os.path.expanduser "~/github/com-junkawasaki"))
+(setv ads (os.path.join repo "orgs" "network-awai" "cloud-murakumo"))
+(setv adnet (os.path.join repo "orgs" "kotoba-lang" "adnet"))
+(setv user-agent "murakumo-adnetwork-bot/1 (evidence collector; contact: owner)")
+
+(defn fetch [path [method "GET"] [body None] [headers None]]
+  (setv request (urllib.request.Request (+ site path) :method method :data body))
+  (.add_header request "user-agent" user-agent)
+  (for [[key value] (.items (or headers {}))]
+    (.add_header request key value))
+  (with [response (urllib.request.urlopen request :timeout 20)]
+    (, response.status (.read response))))
+
+(defn measure [key value]
+  (print f"MEASURE\t{key}\t{value}"))
+
+(defn observe-json [path]
+  (setv [status body] (fetch path))
+  (, status (json.loads body)))
+
+(defn main []
+  (print "ADNETWORK_SURFACE_EVIDENCE_V1")
+  (print (+ "measured_at=" (dt.datetime.now dt.timezone.utc).isoformat))
+  (try
+    (setv [status data] (observe-json "/api/v1/ads/placement?id=free-tier"))
+    (measure "placement_http" status)
+    (measure "placement_kind" (data.get "kind" "?"))
+    (measure "placement_id" (data.get "placement" "?"))
+    (except [Exception as error] (measure "placement_http" (+ "ERROR:" (type error).__name__))))
+  (try
+    (setv [status data] (fetch "/mcp" "POST"
+      (.encode (json.dumps {"jsonrpc" "2.0" "id" 1 "method" "tools/list"}))
+      {"content-type" "application/json" "Accept" "application/json, text/event-stream"}))
+    (setv tools (lfor tool (get (get (json.loads data) "result") "tools") (tool.get "name")))
+    (measure "mcp_http" status)
+    (measure "mcp_tools" (.join "," tools))
+    (measure "mcp_tool_count" (len tools))
+    (except [Exception as error] (measure "mcp_http" (+ "ERROR:" (type error).__name__))))
+  (try
+    (setv [status body] (fetch "/advertise"))
+    (measure "advertise_http" status)
+    (measure "advertise_page_present" (if (in b"Murakumo Ads" body) "yes" "no"))
+    (except [Exception as error] (measure "advertise_http" (+ "ERROR:" (type error).__name__))))
+  (try
+    (setv [status data] (observe-json "/api/v1/free/status"))
+    (measure "free_status_http" status)
+    (for [key ["advertiserFunded" "fundingSource" "impressionsPerUnit" "available" "dailyUnitCap"]]
+      (measure (.replace key "advertiserFunded" "free_advertiser_funded") (data.get key "?")))
+    (except [Exception as error] (measure "free_status_http" (+ "ERROR:" (type error).__name__))))
+  (try
+    (setv [status data] (observe-json "/.well-known/x402"))
+    (measure "x402_http" status)
+    (measure "x402_resource_count" (len (data.get "resources" [])))
+    (measure "x402_versions" (.join "," (lfor version (data.get "versions" []) (str version))))
+    (except [Exception as error] (measure "x402_http" (+ "ERROR:" (type error).__name__))))
+  (try
+    (setv request (urllib.request.Request (+ site "/sdk/x402-agent.mjs") :method "HEAD"))
+    (.add_header request "user-agent" user-agent)
+    (with [response (urllib.request.urlopen request :timeout 20)]
+      (measure "sdk_http" response.status)
+      (measure "sdk_len" (.get response.headers "content-length" "?")))
+    (except [Exception as error] (measure "sdk_http" (+ "ERROR:" (type error).__name__))))
+  (measure "adnet_core_present" (if (os.path.isfile (os.path.join adnet "src" "adnet" "core.cljk")) "yes" "no"))
+  (for [filename ["ads.cljk" "ads_http.cljk" "ads_review.cljk" "ads_mcp.cljk" "free_tier.cljk" "free_tier_http.cljk"]]
+    (measure (+ "repo_" filename)
+             (if (os.path.isfile (os.path.join ads "src" "cloud_murakumo" filename)) "yes" "no")))
+  (try
+    (setv [_ data] (observe-json "/api/v1/ads/placement?id=go-sidebar"))
+    (measure "campaigns_observable" (if (= (data.get "kind") "paid") "paid" "house-only"))
+    (except [Exception as error] (measure "campaigns_observable" (+ "ERROR:" (type error).__name__))))
+  (try
+    (sys.path.insert 0 (os.path.join repo "root" "scripts"))
+    (setv connect (getattr (importlib.import_module "datalake_catalog") "connect"))
+    (setv table (.load_table (connect) (, "cloud_itonami" "adnetwork_advertiser")))
+    (setv arrow (.to_arrow (.scan table)))
+    (measure "advertiser_leads_rows" arrow.num_rows)
+    (except [Exception as error] (measure "advertiser_leads_rows" (+ "ERROR:" (type error).__name__))))
+  0)
+
+(when (= __name__ "__main__") (sys.exit (main)))
