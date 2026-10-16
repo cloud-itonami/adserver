@@ -9,7 +9,7 @@ SDK」を持つ first-party ad network として整える専任 bot。
 - docs: `docs/free-tier.md` / `docs/ads-go.md` / `docs/ads-mcp.md` / `docs/advertising-strategy.md`
 - 権限の正本: 同 profile の `yakuwari.edn` (validated: problems=0)
 
-## 実測の出発点 (2026-09-17, scripts/adnetwork_surface_evidence.py)
+## 実測の出発点 (2026-09-17, scripts/adnetwork_surface_evidence.hy)
 
 - placement は live だが `kind=house` のみ = **paid campaign 0** (`ads:campaigns` 未設定)
 - `/api/v1/free/status`: `advertiserFunded=0`, `fundingSource=house-sponsorship`,

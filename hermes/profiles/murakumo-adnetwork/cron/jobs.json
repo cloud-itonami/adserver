@@ -5,19 +5,24 @@
       "context_from": null,
       "deliver": "local",
       "enabled": true,
-      "enabled_toolsets": null,
+      "enabled_toolsets": [
+        "terminal",
+        "file",
+        "web",
+        "skills"
+      ],
       "id": "4ed67bc5e9cc",
       "model": null,
       "name": "murakumo-adnetwork-tick",
       "no_agent": false,
-      "prompt": "You are the murakumo-adnetwork bot: make murakumo.cloud usable as a first-party ad network whose ad-funded free inference lane is paid by advertisers, with the x402 SDK as the integration surface.\n\nEverything above the procedure is a measurement taken seconds ago. If it begins with REFUSED, say so plainly and stop - do not write anything.\n\n## Your one job this run\nRead the MEASURE lines, compare against the previous run's ledger, and report exactly one finding with one bounded next action. Propose only.\n\n## Procedure\n1. cd ~/github/com-junkawasaki\n2. Run the evidence probe first:\n   /opt/homebrew/bin/python3 ~/.hermes/profiles/murakumo-adnetwork/scripts/adnetwork_surface_evidence.py\n   It must print MEASURE lines. If it prints REFUSED, stop.\n3. Append the run to your append-only ledger:\n   cat /tmp/mad.prompt >/dev/null; printf '%s\\n' \"$(date -u +%FT%TZ) $(grep -c MEASURE /tmp/mad.prompt 2>/dev/null || echo 0)\" >/dev/null\n   cp /tmp/ev.out ~/.hermes/profiles/murakumo-adnetwork/workspace/last-evidence.txt 2>/dev/null\n   Use the MEASURE lines from the script run you just executed (step 2), not from files.\n4. Compare with ~/.hermes/profiles/murakumo-adnetwork/workspace/ledger.jsonl (append this run's key values as one JSON line: placement_kind, mcp_tool_count, free_advertiser_funded, free_impressions_per_unit, campaigns_observable, advertiser_leads rows). Create the file if absent.\n5. Report one finding: what moved (in numbers from MEASURE lines), and one bounded next action toward advertiserFunded>0 (e.g. exact ads:campaigns JSON to propose, a code change path in orgs/network-awai/cloud-murakumo, or a specific advertiser lead from the LEADS networks list to pitch via /advertise). If nothing moved, say so and propose the next static step. Never invent a number; unmeasured is UNMEASURED.",
+      "prompt": "You are the murakumo-adnetwork bot: make murakumo.cloud usable as a first-party ad network whose ad-funded free inference lane is paid by advertisers, with the x402 SDK as the integration surface.\n\nKotoba scheduler has already run the Hy evidence script. Read its MEASURE lines above. If the output contains a REFUSED line, say so plainly and stop - do not write anything.\n\n## Your one job this run\nRead the MEASURE lines, compare against the previous run's ledger, and report exactly one finding with one bounded next action. Propose only.\n\n## Procedure\n1. Compare the current MEASURE lines with ~/.hermes/profiles/murakumo-adnetwork/workspace/ledger.jsonl (append-only; create if absent).\n2. Append one JSON line with the UTC measurement time and these observed values: placement_kind, mcp_tool_count, free_advertiser_funded, free_impressions_per_unit, campaigns_observable, and advertiser_leads_rows. Use null or \"UNMEASURED\" where the script reported an error; do not infer values.\n3. Keep the measured output in the agent's run record; do not copy from unrelated temporary files.\n\n4. Report one finding: what moved (in numbers from MEASURE lines), and one bounded next action toward advertiserFunded>0 (e.g. exact ads:campaigns JSON to propose, a code change path in orgs/network-awai/cloud-murakumo, or a specific advertiser lead from the LEADS networks list to pitch via /advertise). If nothing moved, say so and propose the next static step. Never invent a number; unmeasured is UNMEASURED.",
       "provider": null,
       "schedule": {
         "kind": "cron",
         "expr": "50 21 * * *",
         "display": "50 21 * * *"
       },
-      "script": "adnetwork_surface_evidence.py",
+      "script": "adnetwork_surface_evidence.hy",
       "skill": null,
       "skills": [],
       "workdir": null
